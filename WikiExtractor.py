@@ -60,6 +60,7 @@ import logging
 import os.path
 import re  # TODO use regex when it will be standard
 import time
+import json
 from io import StringIO
 from multiprocessing import Queue, Process, Value, cpu_count
 from timeit import default_timer
@@ -465,6 +466,10 @@ class Extractor(object):
     toHTML = False
 
     ##
+    # Whether to write json instead of the xml-like default output format
+    write_json = False
+    
+    ##
     # Whether to expand templates
     expand_templates = True
 
@@ -499,20 +504,37 @@ class Extractor(object):
 
     def write_output(self, out, text):
         url = get_url(self.id)
-        if Extractor.print_revision:
-            header = '<doc id="%s" revid="%s" url="%s" title="%s">\n' % (self.id, self.revid, url, self.title)
-        else:
-            header = '<doc id="%s" url="%s" title="%s">\n' % (self.id, url, self.title)
-        footer = "\n</doc>\n"
-        if out == sys.stdout:   # option -a or -o -
-            header = header.encode('utf-8')
-        out.write(header)
-        for line in text:
+        if Extractor.write_json:
+            json_data = {
+                'id': self.id,
+                'url': url,
+                'title': self.title,
+                'text': "\n".join(text)
+            }
+            if Extractor.print_revision:
+                json_data['revid'] = self.revid
+            # We don't use json.dump(data, out) because we want to be
+            # able to encode the string if the output is sys.stdout
+            out_str = json.dumps(json_data, ensure_ascii=False)
             if out == sys.stdout:   # option -a or -o -
-                line = line.encode('utf-8')
-            out.write(line)
+                out_str = out_str.encode('utf-8')
+            out.write(out_str)
             out.write('\n')
-        out.write(footer)
+        else:
+            if Extractor.print_revision:
+                header = '<doc id="%s" revid="%s" url="%s" title="%s">\n' % (self.id, self.revid, url, self.title)
+            else:
+                header = '<doc id="%s" url="%s" title="%s">\n' % (self.id, url, self.title)
+            footer = "\n</doc>\n"
+            if out == sys.stdout:   # option -a or -o -
+                header = header.encode('utf-8')
+            out.write(header)
+            for line in text:
+                if out == sys.stdout:   # option -a or -o -
+                    line = line.encode('utf-8')
+                out.write(line)
+                out.write('\n')
+            out.write(footer)
 
     def extract(self, out):
         """
@@ -2961,6 +2983,9 @@ def main():
                         metavar="n[KMG]")
     groupO.add_argument("-c", "--compress", action="store_true",
                         help="compress output files using bzip")
+    groupO.add_argument("--json", action="store_true",
+                        help="write output in json format instead of the default one")
+
 
     groupP = parser.add_argument_group('Processing')
     groupP.add_argument("--html", action="store_true",
@@ -3010,6 +3035,7 @@ def main():
     Extractor.keepSections = args.sections
     Extractor.keepLists = args.lists
     Extractor.toHTML = args.html
+    Extractor.write_json = args.json
     Extractor.print_revision = args.revision
     Extractor.min_text_length = args.min_text_length
     if args.html:
