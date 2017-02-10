@@ -497,22 +497,34 @@ class Extractor(object):
         self.recursion_exceeded_3_errs = 0  # parameter recursion
         self.template_title_errs = 0
 
+    def write_output(self, out, text):
+        url = get_url(self.id)
+        if Extractor.print_revision:
+            header = '<doc id="%s" revid="%s" url="%s" title="%s">\n' % (self.id, self.revid, url, self.title)
+        else:
+            header = '<doc id="%s" url="%s" title="%s">\n' % (self.id, url, self.title)
+        footer = "\n</doc>\n"
+        if out == sys.stdout:   # option -a or -o -
+            header = header.encode('utf-8')
+        out.write(header)
+        for line in text:
+            if out == sys.stdout:   # option -a or -o -
+                line = line.encode('utf-8')
+            out.write(line)
+            out.write('\n')
+        out.write(footer)
 
     def extract(self, out):
         """
         :param out: a memory file.
         """
         logging.info('%s\t%s', self.id, self.title)
-        url = get_url(self.id)
-        if Extractor.print_revision:
-            header = '<doc id="%s" revid="%s" url="%s" title="%s">\n' % (self.id, self.revid, url, self.title)
-        else:
-            header = '<doc id="%s" url="%s" title="%s">\n' % (self.id, url, self.title)
+        
         # Separate header from text with a newline.
         if self.toHTML:
-            header += '<h1>' + self.title + '</h1>\n'
+            title_str = '<h1>' + self.title + '</h1>\n'
         else:
-            header += self.title + '\n\n'
+            title_str = self.title + '\n\n'
         # https://www.mediawiki.org/wiki/Help:Magic_words
         self.magicWords['PAGENAME'] = self.title
         self.magicWords['FULLPAGENAME'] = self.title
@@ -533,18 +545,13 @@ class Extractor(object):
         text = self.transform(text)
         text = self.wiki2text(text)
         text = compact(self.clean(text))
-        footer = "\n</doc>\n"
+        text = [title_str] + text
+        
         if sum(len(line) for line in text) < Extractor.min_text_length:
             return
-        if out == sys.stdout:   # option -a or -o -
-            header = header.encode('utf-8')
-        out.write(header)
-        for line in text:
-            if out == sys.stdout:   # option -a or -o -
-                line = line.encode('utf-8')
-            out.write(line)
-            out.write('\n')
-        out.write(footer)
+        
+        self.write_output(out, text)
+        
         errs = (self.template_title_errs,
                 self.recursion_exceeded_1_errs,
                 self.recursion_exceeded_2_errs,
