@@ -475,6 +475,10 @@ class Extractor(object):
     ##
     # Whether to write json instead of the xml-like default output format
     write_json = False
+
+    ##
+    # Whether to get categories for each page
+    get_categories = False
     
     ##
     # Whether to expand templates
@@ -509,9 +513,10 @@ class Extractor(object):
         self.recursion_exceeded_3_errs = 0  # parameter recursion
         self.template_title_errs = 0
 
-    def write_output(self, out, text):
+    def write_output(self, out, categories, text):
         """
         :param out: a memory file
+        :param categories: A list of categories for this text
         :param text: the text of the page
         """
         url = get_url(self.id)
@@ -524,6 +529,8 @@ class Extractor(object):
             }
             if Extractor.print_revision:
                 json_data['revid'] = self.revid
+            if Extractor.get_categories:
+                json_data['categories'] = categories
             # We don't use json.dump(data, out) because we want to be
             # able to encode the string if the output is sys.stdout
             out_str = json.dumps(json_data, ensure_ascii=False)
@@ -532,10 +539,16 @@ class Extractor(object):
             out.write(out_str)
             out.write('\n')
         else:
-            if Extractor.print_revision:
-                header = '<doc id="%s" revid="%s" url="%s" title="%s">\n' % (self.id, self.revid, url, self.title)
+            if Extractor.get_categories:
+                catstr = ' categories="%s"' % ",".join(categories)
             else:
-                header = '<doc id="%s" url="%s" title="%s">\n' % (self.id, url, self.title)
+                catstr = ''
+            if Extractor.print_revision:
+                revstr = ' revid="%s"' % self.revid
+            else:
+                revstr = ''
+
+            header = '<doc id="%s"%s url="%s" title="%s"%s>\n' % (self.id, revstr, url, self.title, catstr)
             footer = "\n</doc>\n"
             if out == sys.stdout:   # option -a or -o -
                 header = header.encode('utf-8')
@@ -546,7 +559,7 @@ class Extractor(object):
                 out.write(line)
                 out.write('\n')
             out.write(footer)
-
+            
     def extract(self, out):
         """
         :param out: a memory file.
@@ -568,6 +581,9 @@ class Extractor(object):
         self.magicWords['CURRENTTIME'] = time.strftime('%H:%M:%S')
         text = self.text
         self.text = ''          # save memory
+
+        # get the categories
+        categories = get_categories(text) if Extractor.get_categories else []
         #
         # @see https://doc.wikimedia.org/mediawiki-core/master/php/classParser.html
         # This does the equivalent of internalParse():
@@ -583,7 +599,7 @@ class Extractor(object):
         if sum(len(line) for line in text) < Extractor.min_text_length:
             return
         
-        self.write_output(out, text)
+        self.write_output(out, categories, text)
         
         errs = (self.template_title_errs,
                 self.recursion_exceeded_1_errs,
@@ -592,7 +608,6 @@ class Extractor(object):
         if any(errs):
             logging.warn("Template errors in article '%s' (%s): title(%d) recursion(%d, %d, %d)",
                          self.title, self.id, *errs)
-
 
     def transform(self, wikitext):
         """
@@ -2318,6 +2333,22 @@ def makeInternalLink(title, label):
     else:
         return label
 
+def get_categories(wikitext):
+        """
+        Get a list of categories from the given wikitext
+        """
+        categories = []
+        for s, e in findBalanced(wikitext):
+            inner = wikitext[s+2:e-2]
+            pipe = inner.find('|')
+            if pipe < 0:
+                title = inner
+            else:
+                title = inner[:pipe]
+            colon = title.find(":")
+            if colon >= 0 and title.startswith("Category"):
+                categories.append(title[colon+1:])
+        return categories
 
 # ----------------------------------------------------------------------
 # External links
@@ -3025,6 +3056,9 @@ def main():
                         help="comma separated list of elements that will be removed from the article text")
     groupP.add_argument("--keep_tables", action="store_true", default=keep_tables,
                         help="Preserve tables in the output article text (default=%(default)s)")
+    groupP.add_argument("--categories", action="store_true",
+                        help="For each page, report categories in the output")
+
     default_process_count = max(1, cpu_count() - 1)
     parser.add_argument("--processes", type=int, default=default_process_count,
                         help="Number of processes to use (default %(default)s)")
@@ -3047,6 +3081,7 @@ def main():
     Extractor.keepLists = args.lists
     Extractor.toHTML = args.html
     Extractor.write_json = args.json
+    Extractor.get_categories = args.categories
     Extractor.print_revision = args.revision
     Extractor.min_text_length = args.min_text_length
     if args.html:
