@@ -522,13 +522,13 @@ class Extractor(object):
         url = get_url(self.id)
         if Extractor.write_json:
             json_data = {
-                'id': self.id,
+                'id': int(self.id),
                 'url': url,
                 'title': self.title,
                 'text': "\n".join(text)
             }
             if Extractor.print_revision:
-                json_data['revid'] = self.revid
+                json_data['revid'] = int(self.revid)
             if Extractor.get_categories:
                 json_data['categories'] = categories
             # We don't use json.dump(data, out) because we want to be
